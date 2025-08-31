@@ -1,5 +1,6 @@
 using System.Text;
 using RabbitMQ.Client;
+using RabbitMq.Demo;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,9 +19,10 @@ var connectionFactory = new ConnectionFactory()
 
 var connection =await connectionFactory.CreateConnectionAsync();
 
-var channel = await connection.CreateChannelAsync();
 
-await channel.ExchangeDeclareAsync("demo.direct", ExchangeType.Direct, true, false, passive: false);
+await using (var channel = await connection.CreateChannelAsync())
+{
+    await channel.ExchangeDeclareAsync("demo.direct", ExchangeType.Direct, true, false, passive: false);
 await channel.ExchangeDeclareAsync("demo.topics", ExchangeType.Topic, true, false, passive: false);
 await channel.ExchangeDeclareAsync("demo.headers", ExchangeType.Headers, true, false, passive: false);
 await channel.ExchangeDeclareAsync("demo.fanout", ExchangeType.Fanout, true, false, passive: false);
@@ -67,12 +69,17 @@ await channel.QueueBindAsync("demo.queue.fanout.2", "demo.fanout", "");
 await channel.QueueBindAsync("demo.queue.deadletter", "demo.deadletter", "");
 
 await channel.QueueBindAsync("demo.queue.exception", "demo.exception", "");
+}
 
-builder.Services.AddSingleton(channel);
+
+
+builder.Services.AddSingleton(connection);
+
+builder.Services.AddTransient<ProducerChannelProvider>();
 
 var app = builder.Build();
 
-app.MapPost("/DirectPublish", async (IChannel rabbitMqChannel) =>
+app.MapPost("/DirectPublish", async (ProducerChannelProvider channelProvider) =>
 {
     var message = "This is direct publish"u8.ToArray();
 
@@ -82,11 +89,13 @@ app.MapPost("/DirectPublish", async (IChannel rabbitMqChannel) =>
         DeliveryMode = DeliveryModes.Persistent,
     };
 
+    await using var rabbitMqChannel=await channelProvider.GetChannelAsync();
+
     await rabbitMqChannel.BasicPublishAsync("demo.direct", "", true, properties, message);
 });
 
 
-app.MapPost("/TopicPublish", async (IChannel rabbitMqChannel, string routingKey) =>
+app.MapPost("/TopicPublish", async (ProducerChannelProvider channelProvider, string routingKey) =>
 {
     var message = Encoding.UTF8.GetBytes($"This is topic publish with topic {routingKey}");
 
@@ -96,10 +105,12 @@ app.MapPost("/TopicPublish", async (IChannel rabbitMqChannel, string routingKey)
         DeliveryMode = DeliveryModes.Persistent,
     };
 
+    var rabbitMqChannel = await channelProvider.GetChannelAsync();
+    
     await rabbitMqChannel.BasicPublishAsync("demo.topics", routingKey, true, properties, message);
 });
 
-app.MapPost("/HeadersPublish", async (IChannel rabbitMqChannel, string queueName) =>
+app.MapPost("/HeadersPublish", async (ProducerChannelProvider channelProvider, string queueName) =>
 {
     var message = Encoding.UTF8.GetBytes($"This is header publish with queueName {queueName}");
 
@@ -113,10 +124,12 @@ app.MapPost("/HeadersPublish", async (IChannel rabbitMqChannel, string queueName
         }
     };
 
+    var rabbitMqChannel = await channelProvider.GetChannelAsync();
+    
     await rabbitMqChannel.BasicPublishAsync("demo.headers", "", true, properties, message);
 });
 
-app.MapPost("/FanoutPublish", async (IChannel rabbitMqChannel) =>
+app.MapPost("/FanoutPublish", async (ProducerChannelProvider channelProvider) =>
 {
     var message = "This is fanout publish"u8.ToArray();
 
@@ -126,11 +139,13 @@ app.MapPost("/FanoutPublish", async (IChannel rabbitMqChannel) =>
         DeliveryMode = DeliveryModes.Persistent,
     };
 
+    var rabbitMqChannel = await channelProvider.GetChannelAsync();
+    
     await rabbitMqChannel.BasicPublishAsync("demo.fanout", "", true, properties, message);
 });
 
 
-app.MapPost("/ExceptionMessage", async (IChannel rabbitMqChannel) =>
+app.MapPost("/ExceptionMessage", async (ProducerChannelProvider channelProvider) =>
 {
     var message = "This is exception publish and must go to dead letter exchange"u8.ToArray();
 
@@ -141,6 +156,8 @@ app.MapPost("/ExceptionMessage", async (IChannel rabbitMqChannel) =>
         Expiration = "5000"
     };
 
+    var rabbitMqChannel = await channelProvider.GetChannelAsync();
+    
     await rabbitMqChannel.BasicPublishAsync("demo.exception", "", true, properties, message);
 });
 
