@@ -5,36 +5,33 @@ namespace RabbitMq.Demo;
 
 public class ProducerChannelProvider(IConnection connection):IDisposable
 {
-    private static readonly ConcurrentBag<IChannel> ChannelPool = [];
+    private static readonly ConcurrentBag<IChannel>  ChannelPool= new();
+   
     private IChannel? _currentChannel;
-    private static readonly SemaphoreSlim Semaphore = new SemaphoreSlim(1, 1);
+
+    private const int Limit = 20;
+
+    private static readonly SemaphoreSlim SemaphoreSlim = new(Limit, Limit);
 
 
-    public async Task<IChannel> GetChannelAsync()
+    public async ValueTask<IChannel> GetChannelAsync()
     {
-        await Semaphore.WaitAsync();
+        await SemaphoreSlim.WaitAsync();
         
-        Console.WriteLine($"Number of channels in pool: {ChannelPool.Count}");
-        Console.WriteLine($"Number of active channels: {ChannelPool.Count(c=>c.IsOpen)}");
-        
-        if (ChannelPool.TryTake(out _currentChannel) && _currentChannel is {IsOpen:true})
+        if (ChannelPool.TryTake(out _currentChannel) && _currentChannel is { IsOpen: true })
             return _currentChannel;
         
         _currentChannel=await connection.CreateChannelAsync();
-        
+
         return _currentChannel;
     }
-
+    
     public void Dispose()
     {
-        Semaphore.Release();
         
-        if (_currentChannel is null)
-            return;
-        
-        if(_currentChannel.IsClosed)
-            return;
-        
-        ChannelPool.Add(_currentChannel);
+        if(_currentChannel is {IsOpen:true})
+            ChannelPool.Add(_currentChannel);
+
+        SemaphoreSlim.Release();
     }
 }
