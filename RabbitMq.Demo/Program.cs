@@ -1,4 +1,5 @@
 using System.Text;
+using Google.Protobuf;
 using RabbitMQ.Client;
 using RabbitMq.Demo;
 using Scalar.AspNetCore;
@@ -8,6 +9,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+builder.Services.AddSingleton<DirectConsumer>();
 
 var connectionFactory = new ConnectionFactory()
 {
@@ -29,6 +32,7 @@ await channel.ExchangeDeclareAsync("demo.fanout", ExchangeType.Fanout, true, fal
 await channel.ExchangeDeclareAsync("demo.deadletter", ExchangeType.Direct, true, false, passive:false);
 
 await channel.ExchangeDeclareAsync("demo.exception", ExchangeType.Fanout, true, false, passive: false);
+await channel.ExchangeDeclareAsync("demo.grpc", ExchangeType.Fanout, true, false, passive: false);
 
 await channel.QueueDeclareAsync("demo.queue.direct", false, false, false);
 await channel.QueueDeclareAsync("demo.queue.topic.1", false, false, false);
@@ -42,6 +46,9 @@ await channel.QueueDeclareAsync("demo.queue.exception", true, false, false,new D
 {
     {"x-dead-letter-exchange","demo.deadletter"}
 });
+
+
+await channel.QueueDeclareAsync("demo.queue.grpc", true, false, false);
 
 
 await channel.QueueBindAsync("demo.queue.direct", "demo.direct","");
@@ -69,6 +76,7 @@ await channel.QueueBindAsync("demo.queue.fanout.2", "demo.fanout", "");
 await channel.QueueBindAsync("demo.queue.deadletter", "demo.deadletter", "");
 
 await channel.QueueBindAsync("demo.queue.exception", "demo.exception", "");
+await channel.QueueBindAsync("demo.queue.grpc", "demo.grpc", "");
 }
 
 
@@ -85,7 +93,7 @@ app.MapPost("/DirectPublish", async (ProducerChannelProvider channelProvider) =>
 
     var properties = new BasicProperties()
     {
-        ContentType = "text/plain",
+        ContentType = "application/grpc",
         DeliveryMode = DeliveryModes.Persistent,
     };
 
@@ -161,12 +169,34 @@ app.MapPost("/ExceptionMessage", async (ProducerChannelProvider channelProvider)
     await rabbitMqChannel.BasicPublishAsync("demo.exception", "", true, properties, message);
 });
 
+app.MapPost("/GrpcMessage", async (ProducerChannelProvider channelProvider) =>
+{
+    var userLoggedInModel = new User.ProtoModels.UserLoggedIn()
+    {
+        UserId = Guid.NewGuid().ToString(),
+    };
+
+    var properties = new BasicProperties()
+    {
+        ContentType = "text/plain",
+        DeliveryMode = DeliveryModes.Persistent,
+    };
+
+    var rabbitMqChannel = await channelProvider.GetChannelAsync();
+    
+    await rabbitMqChannel.BasicPublishAsync("demo.grpc", "", true, properties,  userLoggedInModel.ToByteArray());
+});
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
 }
+
+var directConsumer = app.Services.GetRequiredService<DirectConsumer>();
+
+await directConsumer.ConfigureAsync();
 
 app.UseHttpsRedirection();
 

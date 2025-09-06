@@ -10,6 +10,17 @@
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0"/>
         <PackageReference Include="RabbitMQ.Client" Version="7.1.2" />
         <PackageReference Include="Scalar.AspNetCore" Version="2.7.2" />
+        <PackageReference Include="Google.Protobuf" Version="3.31.1" />
+        <PackageReference Include="Grpc.Tools" Version="2.72.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+    
+    <ItemGroup>
+        <Protobuf Include="UserLoggedIn.proto">
+            <Generator>MSBuild:Compile</Generator>
+        </Protobuf>
     </ItemGroup>
 
 </Project>

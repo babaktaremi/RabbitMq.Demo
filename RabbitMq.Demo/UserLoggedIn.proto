@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+option csharp_namespace = "User.ProtoModels";
+
+message UserLoggedIn {
+ string UserId=1;
+}
